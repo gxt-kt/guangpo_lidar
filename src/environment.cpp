@@ -126,17 +126,6 @@ void initCamera(CameraAngle setAngle, pcl::visualization::PCLVisualizer::Ptr &vi
         viewer->addCoordinateSystem(1.0);
 }
 
-// 计算旋转矩阵  
-Eigen::Matrix4d TransforMatrix(Eigen::Vector3d translation,double roll,double pitch,double yaw) {
-    Eigen::Quaterniond q = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ())  
-                         * Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY())  
-                         * Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX());  
-    Eigen::Matrix4d transformation_matrix = Eigen::Matrix4d::Identity(); // 初始化为单位矩阵  
-    transformation_matrix.block<3, 3>(0, 0) = q.toRotationMatrix(); // 设置旋转矩阵部分  
-    transformation_matrix.block<3, 1>(0, 3) = translation; // 设置平移向量部分  
-    std::cout << "旋转矩阵：" << std::endl << transformation_matrix << std::endl;  
-    return transformation_matrix;
-}
 
 // char* argv[] means array of char pointers, whereas char** argv means pointer to a char pointer.
 int main(int argc, char **argv) {

@@ -1,6 +1,19 @@
 # 基础ros设置
-sub_cloud_topic : "abc"
-pub_cloud_topic : "efg"
+sub_cloud_topic : "/livox/lidar_192_168_20_105"
+pub_cloud_ground_topic : "cloud_ground"
+pub_cloud_noground_topic : "cloud_noground"
+obstacles_topic : "obstacles_topic"
+# 激光雷达到车体坐标系变换
+convert:
+  transform:
+    x: 0.3643
+    y: 0.2078
+    z: 1.21
+  # 角度，代码里会转成弧度
+  rotation :
+    roll: -179.5
+    pitch: 0.5
+    yaw: 360
 # 降采样大小
 filterRes : 0.05
 # 设置roi区域
@@ -25,10 +38,13 @@ ransac:
   distanceThreshold : 0.1
 # 设置聚类参数
 cluster:
-  clusterTolerance : 0.2
+  clusterTolerance : 0.15
   minsize : 30
-  maxsize : 1000
+  maxsize : 2000
 # 可视化分割地面点云
 view:
   segment : false
+# 打印日志
+log:
+  enable_obstacles: false
   
