@@ -2,12 +2,18 @@
 
 #include "yaml_config.h"
 #include <iostream>
+#include <filesystem>
 
 YAML::Node ReadConfigYamlFile();
 
-static std::string yaml_config_path =
-"/media/Projects/guangpo_lidar/src/guangpo_lidar/yaml_config/yaml_config.yaml";
-
+// static std::string yaml_config_path =
+// "/media/Projects/guangpo_lidar/src/guangpo_lidar/yaml_config/yaml_config.yaml";
+static std::string yaml_config_path = []()->std::string{
+  std::filesystem::path current_dir =
+      std::filesystem::path(__FILE__).parent_path();
+  std::filesystem::path yaml_path = current_dir / "yaml_config.yaml";
+  return yaml_path;
+}();
 
 YAML::Node yaml_config = ReadConfigYamlFile();
 
