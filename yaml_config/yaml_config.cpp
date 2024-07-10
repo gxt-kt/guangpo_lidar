@@ -1,5 +1,3 @@
-#pragma once
-
 #include "yaml_config.h"
 #include <iostream>
 #include <filesystem>
