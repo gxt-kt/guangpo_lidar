@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CXX_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS, "${CXX_FLAGS}")
+add_compile_options( -fopenmp -O3)
 
 find_package(PCL REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
