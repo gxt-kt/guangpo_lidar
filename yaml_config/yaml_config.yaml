@@ -41,6 +41,9 @@ cluster:
   clusterTolerance : 0.15
   minsize : 30
   maxsize : 2000
+# 设置障碍物obb提取openmp线程数（最好大于4）
+obb:
+  threads : 8
 # 可视化分割地面点云
 view:
   segment : false

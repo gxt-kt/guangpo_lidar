@@ -29,6 +29,8 @@
 #include <pcl/point_types.h>
 #include <pcl/visualization/cloud_viewer.h>
 
+#include "yaml_config.h"
+
 /**
  * 使用欧式聚类对点云进行分割
  * @param input_cloud 输入点云
@@ -121,6 +123,10 @@ inline void ExtractObstacles(
   obstacle_centroids.clear();
   obstacle_sizes.clear();
   obstacle_orientations.clear();
+  
+  int obb_omp_threads = yaml_config["obb"]["threads"].as<int>();
+  omp_set_num_threads(obb_omp_threads);
+  #pragma omp parallel for
   for (const auto &obstacle_cloud : obstacle_clouds) {
     pcl::MomentOfInertiaEstimation<pcl::PointXYZI> feature_extractor;
     feature_extractor.setInputCloud(obstacle_cloud);
@@ -136,13 +142,16 @@ inline void ExtractObstacles(
 
     Eigen::Vector3f position(position_OBB.x, position_OBB.y, position_OBB.z);
     Eigen::Quaternionf quat(rotational_matrix_OBB);
-    obstacle_centroids.push_back(position);
-    obstacle_orientations.push_back(quat);
     Eigen::Vector3f size;
     size << (max_point_OBB.x - min_point_OBB.x),
         (max_point_OBB.y - min_point_OBB.y),
         (max_point_OBB.z - min_point_OBB.z);
-    obstacle_sizes.push_back(size);
+    #pragma omp critical
+    {
+      obstacle_centroids.push_back(position);
+      obstacle_orientations.push_back(quat);
+      obstacle_sizes.push_back(size);
+    }
     // 可视化障碍物框
     if (false) {
       pcl::visualization::PCLVisualizer::Ptr viewer(
