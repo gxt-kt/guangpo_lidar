@@ -1,0 +1,17 @@
+# 基础ros设置
+sub_image_topic : "/usb_cam/image_raw"
+pub_image_topic : "detect_img"
+# 输入图片尺寸
+image:
+  width: 1280
+  height: 720
+# 相机内参矩阵
+camera_in_param:
+  dx: 787.22316869
+  dy: 793.45182
+  u0: 628.91534144
+  v0: 313.46301416
+# 启动时warmup并生成测试
+warmup: true
+# 生成debug图片
+# write_img: false
