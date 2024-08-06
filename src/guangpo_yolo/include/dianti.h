@@ -1,3 +1,4 @@
+#pragma once
 #include <Eigen/Core>
 #include <cmath>
 #include <iostream>

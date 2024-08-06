@@ -5,6 +5,7 @@ project(guangpo_yolo)
 # add_compile_options(-std=c++11)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ## Find catkin macros and libraries
@@ -152,6 +153,7 @@ include/rga/include
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node src/main.cpp  src/postprocess.cc src/preprocess.cc yaml_config/yaml_config.cpp)
+add_executable(${PROJECT_NAME}_test_node src/main_test.cc  src/postprocess.cc src/preprocess.cc yaml_config/yaml_config.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -165,6 +167,12 @@ add_executable(${PROJECT_NAME}_node src/main.cpp  src/postprocess.cc src/preproc
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
+  ${LIB_FILES}
+  yaml-cpp
+)
+target_link_libraries(${PROJECT_NAME}_test_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBS}
   ${LIB_FILES}

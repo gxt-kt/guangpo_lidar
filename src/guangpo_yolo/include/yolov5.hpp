@@ -4,6 +4,7 @@
                 Includes
 -------------------------------------------*/
 #include <dlfcn.h>
+#include <exception>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,13 +13,18 @@
 #define _BASETSD_H
 
 #include "RgaUtils.h"
-#include "debugstream.hpp"
-#include "dianti.h"
 #include "postprocess.h"
+
 #include "preprocess.h"
 #include "rknn_api.h"
 
+#include "debugstream.hpp"
+#include "dianti.h"
+
 #define PERF_WITH_POST 1
+/*-------------------------------------------
+                  Functions
+-------------------------------------------*/
 
 static void dump_tensor_attr(rknn_tensor_attr *attr) {
   std::string shape_str = attr->n_dims < 1 ? "" : std::to_string(attr->dims[0]);
@@ -26,20 +32,17 @@ static void dump_tensor_attr(rknn_tensor_attr *attr) {
     shape_str += ", " + std::to_string(attr->dims[i]);
   }
 
-  printf(
-      "  index=%d, name=%s, n_dims=%d, dims=[%s], n_elems=%d, size=%d, "
-      "w_stride = %d, size_with_stride=%d, fmt=%s, "
-      "type=%s, qnt_type=%s, "
-      "zp=%d, scale=%f\n",
-      attr->index, attr->name, attr->n_dims, shape_str.c_str(), attr->n_elems,
-      attr->size, attr->w_stride, attr->size_with_stride,
-      get_format_string(attr->fmt), get_type_string(attr->type),
-      get_qnt_type_string(attr->qnt_type), attr->zp, attr->scale);
+  printf("  index=%d, name=%s, n_dims=%d, dims=[%s], n_elems=%d, size=%d, "
+         "w_stride = %d, size_with_stride=%d, fmt=%s, "
+         "type=%s, qnt_type=%s, "
+         "zp=%d, scale=%f\n",
+         attr->index, attr->name, attr->n_dims, shape_str.c_str(),
+         attr->n_elems, attr->size, attr->w_stride, attr->size_with_stride,
+         get_format_string(attr->fmt), get_type_string(attr->type),
+         get_qnt_type_string(attr->qnt_type), attr->zp, attr->scale);
 }
 
-static double __get_us(struct timeval t) {
-  return (t.tv_sec * 1000000 + t.tv_usec);
-}
+double __get_us(struct timeval t) { return (t.tv_sec * 1000000 + t.tv_usec); }
 
 static unsigned char *load_data(FILE *fp, size_t ofst, size_t sz) {
   unsigned char *data;
@@ -98,16 +101,28 @@ static int saveFloat(const char *file_name, float *output, int element_size) {
 }
 
 class Yolov5 {
- public:
-  /*-------------------------------------------
-                    Functions
-  -------------------------------------------*/
-
-  std::string model_path_;
+public:
+  rknn_context ctx;
+  rknn_input inputs[1];
+  int img_width = 0;
+  int img_height = 0;
+  int img_channel = 0;
+  int channel = 3;
+  int width = 0;
+  int height = 0;
+  rga_buffer_t src;
+  rga_buffer_t dst;
+  std::string option = "letterbox";
+  rknn_input_output_num io_num;
+  struct timeval start_time, stop_time;
+  rknn_tensor_attr *output_attrs;
+  const float nms_threshold = NMS_THRESH;      // 默认的NMS阈值
+  const float box_conf_threshold = BOX_THRESH; // 默认的置信度阈值
+  unsigned char *model_data;
+  std::vector<std::string> labels;
   Yolov5() {}
-  void Init(const std::string &model_path) {}
   ~Yolov5() {
-    deinitPostProcess();
+    // deinitPostProcess();
 
     // release
     rknn_destroy(ctx);
@@ -116,39 +131,19 @@ class Yolov5 {
       free(model_data);
     }
   }
-
-  rknn_context ctx;
-  unsigned char *model_data;
-  int ret;
-
-  void LoadModel() {
-    int img_width = 0;
-    int img_height = 0;
-    int img_channel = 0;
-    const float nms_threshold = NMS_THRESH;       // 默认的NMS阈值
-    const float box_conf_threshold = BOX_THRESH;  // 默认的置信度阈值
-    struct timeval start_time, stop_time;
-    // char *model_name = (char *)argv[1];
-    // char *input_path = argv[2];
-    std::string option = "letterbox";
-    std::string out_path = "./out.jpg";
-    if (argc >= 4) {
-      option = argv[3];
-    }
-    if (argc >= 5) {
-      out_path = argv[4];
-    }
+  void SetLabels(const std::vector<std::string> &labelss) { labels = labelss; }
+  void LoadModel(const std::string &model_name_str) {
+    int ret;
+    const char *model_name = model_name_str.c_str();
+    // std::string out_path = "./out.jpg";
 
     // init rga context
-    rga_buffer_t src;
-    rga_buffer_t dst;
     memset(&src, 0, sizeof(src));
     memset(&dst, 0, sizeof(dst));
 
-    printf(
-        "post process config: box_conf_threshold = %.2f, nms_threshold = "
-        "%.2f\n",
-        box_conf_threshold, nms_threshold);
+    printf("post process config: box_conf_threshold = %.2f, nms_threshold = "
+           "%.2f\n",
+           box_conf_threshold, nms_threshold);
 
     /* Create the neural network */
     printf("Loading mode...\n");
@@ -157,7 +152,7 @@ class Yolov5 {
     ret = rknn_init(&ctx, model_data, model_data_size, 0, NULL);
     if (ret < 0) {
       printf("rknn_init error ret=%d\n", ret);
-      return -1;
+      std::terminate();
     }
 
     rknn_sdk_version version;
@@ -165,16 +160,15 @@ class Yolov5 {
                      sizeof(rknn_sdk_version));
     if (ret < 0) {
       printf("rknn_init error ret=%d\n", ret);
-      return -1;
+      std::terminate();
     }
     printf("sdk version: %s driver version: %s\n", version.api_version,
            version.drv_version);
 
-    rknn_input_output_num io_num;
     ret = rknn_query(ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
     if (ret < 0) {
       printf("rknn_init error ret=%d\n", ret);
-      return -1;
+      std::terminate();
     }
     printf("model input num: %d, output num: %d\n", io_num.n_input,
            io_num.n_output);
@@ -187,13 +181,14 @@ class Yolov5 {
                        sizeof(rknn_tensor_attr));
       if (ret < 0) {
         printf("rknn_init error ret=%d\n", ret);
-        return -1;
+        std::terminate();
       }
       dump_tensor_attr(&(input_attrs[i]));
     }
 
-    rknn_tensor_attr output_attrs[io_num.n_output];
-    memset(output_attrs, 0, sizeof(output_attrs));
+    //   rknn_tensor_attr output_attrs[io_num.n_output];
+    output_attrs = new rknn_tensor_attr[io_num.n_output];
+    memset(output_attrs, 0, sizeof(*output_attrs));
     for (int i = 0; i < io_num.n_output; i++) {
       output_attrs[i].index = i;
       ret = rknn_query(ctx, RKNN_QUERY_OUTPUT_ATTR, &(output_attrs[i]),
@@ -201,9 +196,6 @@ class Yolov5 {
       dump_tensor_attr(&(output_attrs[i]));
     }
 
-    int channel = 3;
-    int width = 0;
-    int height = 0;
     if (input_attrs[0].fmt == RKNN_TENSOR_NCHW) {
       printf("model is NCHW input fmt\n");
       channel = input_attrs[0].dims[1];
@@ -218,23 +210,18 @@ class Yolov5 {
 
     printf("model input height=%d, width=%d, channel=%d\n", height, width,
            channel);
-  }
-  void Infer() {
-    rknn_input inputs[1];
+
     memset(inputs, 0, sizeof(inputs));
     inputs[0].index = 0;
     inputs[0].type = RKNN_TENSOR_UINT8;
     inputs[0].size = width * height * channel;
     inputs[0].fmt = RKNN_TENSOR_NHWC;
     inputs[0].pass_through = 0;
-
-    // 读取图片
-    printf("Read %s ...\n", input_path);
-    cv::Mat orig_img = cv::imread(input_path, 1);
-    if (!orig_img.data) {
-      printf("cv::imread %s fail!\n", input_path);
-      return -1;
-    }
+  }
+  detect_result_group_t Infer(const cv::Mat &orig_img,
+                              const std::string &out_path = "output.jpg",
+                              bool debug = false) {
+    int ret;
     cv::Mat img;
     cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
     img_width = img.cols;
@@ -257,10 +244,11 @@ class Yolov5 {
         ret = resize_rga(src, dst, img, resized_img, target_size);
         if (ret != 0) {
           fprintf(stderr, "resize with rga error\n");
-          return -1;
+          std::terminate();
         }
         // 保存预处理图片
-        cv::imwrite("resize_input.jpg", resized_img);
+        if (debug)
+          cv::imwrite("resize_input.jpg", resized_img);
       } else if (option == "letterbox") {
         printf("resize image with letterbox\n");
         float min_scale = std::min(scale_w, scale_h);
@@ -268,11 +256,12 @@ class Yolov5 {
         scale_h = min_scale;
         letterbox(img, resized_img, pads, min_scale, target_size);
         // 保存预处理图片
-        cv::imwrite("letterbox_input.jpg", resized_img);
+        if (debug)
+          cv::imwrite("letterbox_input.jpg", resized_img);
       } else {
         fprintf(stderr,
                 "Invalid resize option. Use 'resize' or 'letterbox'.\n");
-        return -1;
+        std::terminate();
       }
       inputs[0].buf = resized_img.data;
     } else {
@@ -292,9 +281,6 @@ class Yolov5 {
     // 执行推理
     ret = rknn_run(ctx, NULL);
     ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
-    gettimeofday(&stop_time, NULL);
-    printf("once run use %f ms\n",
-           (__get_us(stop_time) - __get_us(start_time)) / 1000);
 
     // 后处理
     detect_result_group_t detect_result_group;
@@ -307,7 +293,11 @@ class Yolov5 {
     post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf,
                  (int8_t *)outputs[2].buf, height, width, box_conf_threshold,
                  nms_threshold, pads, scale_w, scale_h, out_zps, out_scales,
-                 &detect_result_group);
+                 &detect_result_group, labels);
+
+    gettimeofday(&stop_time, NULL);
+    printf("once run use %f ms\n",
+           (__get_us(stop_time) - __get_us(start_time)) / 1000);
 
     // 画框和概率
     char text[256];
@@ -326,72 +316,11 @@ class Yolov5 {
       putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX,
               0.4, cv::Scalar(255, 255, 255));
     }
-
-    // gxt: add my process here ==============begin
-    // 相机内参
-    Eigen::Matrix3d camera_matrix;
-    camera_matrix << 787.22316869, 0.0, 628.91534144, 0.0, 793.45182,
-        313.46301416, 0.0, 0.0, 1.0;
-    //   int my_width=orig_img.cols;
-    //   int my_height=orig_img.rows;
-    DistanceEstimator estimator(camera_matrix, img_width, img_height);
-    std::vector<Box> rens;
-    std::vector<Box> diantis;
-    gDebug(detect_result_group.count);
-    for (int i = 0; i < detect_result_group.count; i++) {
-      detect_result_t *det_result = &(detect_result_group.results[i]);
-      // sprintf(text, "%s %.1f%%", det_result->name, det_result->prop * 100);
-      // printf("%s @ (%d %d %d %d) %f\n", det_result->name,
-      // det_result->box.left, det_result->box.top,
-      //        det_result->box.right, det_result->box.bottom,
-      //        det_result->prop);
-      Box box;
-      box.x = (double)(det_result->box.left + det_result->box.right) / 2.0 /
-              img_width;
-      box.y = (double)(det_result->box.top + det_result->box.bottom) / 2.0 /
-              img_height;
-      box.w = (double)std::abs(det_result->box.right - det_result->box.left) /
-              img_width;
-      box.h = (double)std::abs(det_result->box.bottom - det_result->box.top) /
-              img_height;
-      std::string class_name = det_result->name;
-      if (class_name == "Dianti") {
-        diantis.push_back(box);
-      } else if (class_name == "Ren") {
-        rens.push_back(box);
-      }
-      // int x1 = det_result->box.left;
-      // int y1 = det_result->box.top;
-      // int x2 = det_result->box.right;
-      // int y2 = det_result->box.bottom;
-      // rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2),
-      // cv::Scalar(256, 0, 0, 256), 3); putText(orig_img, text, cv::Point(x1,
-      // y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255));
+    if (!out_path.empty()) {
+      printf("save detect result to %s\n", out_path.c_str());
+      imwrite(out_path, orig_img);
     }
-    DealImage(estimator, orig_img, rens, diantis);
-    // gxt: add my process here ==============end
-
-    printf("save detect result to %s\n", out_path.c_str());
-    imwrite(out_path, orig_img);
-    ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
-
-    // 耗时统计
-    int test_count = 10;
-    gettimeofday(&start_time, NULL);
-    for (int i = 0; i < test_count; ++i) {
-      rknn_inputs_set(ctx, io_num.n_input, inputs);
-      ret = rknn_run(ctx, NULL);
-      ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
-#if PERF_WITH_POST
-      post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf,
-                   (int8_t *)outputs[2].buf, height, width, box_conf_threshold,
-                   nms_threshold, pads, scale_w, scale_h, out_zps, out_scales,
-                   &detect_result_group);
-#endif
-      ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
-    }
-    gettimeofday(&stop_time, NULL);
-    printf("loop count = %d , average run  %f ms\n", test_count,
-           (__get_us(stop_time) - __get_us(start_time)) / 1000.0 / test_count);
+    rknn_outputs_release(ctx, io_num.n_output, outputs);
+    return detect_result_group;
   }
 };
