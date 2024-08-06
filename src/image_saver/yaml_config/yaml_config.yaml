@@ -1,0 +1,6 @@
+# 基础ros设置
+sub_image_topic : "/usb_cam/image_raw"
+# 每隔多少图片保存一张
+save_interval : 5
+# 保存图片路径：（为空则默认保存在这个功能包的images目录下）
+save_path : ""

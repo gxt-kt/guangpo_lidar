@@ -1,0 +1,3 @@
+<launch>
+<node pkg="image_saver"  type="image_saver_node"  name="image_saver_node"  output="screen" ></node>
+</launch>

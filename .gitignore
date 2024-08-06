@@ -1,0 +1,6 @@
+.cache
+build
+devel
+cmake-build-*
+.catkin_workspace
+/src/CMakeLists.txt
