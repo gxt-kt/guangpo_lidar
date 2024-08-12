@@ -1,0 +1,4 @@
+<launch>
+<node pkg="rviz"  type="rviz"  name="rviz"  args="-d $(find guangpo_yolo_lidar)/rviz/guangpo.rviz"></node>
+<!-- <node pkg="guangpo_yolo_lidar"  type="guangpo_yolo_lidar_node"  name="guangpo_yolo_lidar_node"  output="screen" ></node> -->
+</launch>

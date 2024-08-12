@@ -1,0 +1,107 @@
+# 基础ros设置
+sub_image_topic : "/usb_cam/image_raw"
+sub_pointcloud_topic : "/livox/lidar_192_168_20_105"
+pub_image_topic : "detect_img"
+pub_lidar_topic : "detect_lidar"
+pub_cloud_noground_topic : "cloud_noground"
+pub_box3d_markers_topic : "box3d_markers"
+
+# 使用仿真还是激光雷达
+# 使用仿真就是图像数据从功能包接收
+# 不使用仿真就是图像数据从/dev驱动中读取
+use_bag : true
+camera_image_dev : "/dev/video11"
+
+# 大于一定距离就不计算到电梯拥挤度里面 ,单位 m
+person_distance : 5
+# 订阅的开启/关闭电梯拥挤度的话题
+detect_congest_enable_topic : "/detect_congest_enable"
+# 发布的电梯拥挤度话题
+person_density_topic : "/person_density"
+
+# 设置传感器时间同步最大时间间隔 单位s
+max_time_interval : 0.2
+
+# 点云是否去除地面(去除地面最好开启点云降采样)
+remove_ground_points_enable : true
+# 去除地面点云高度
+remove_ground_height : 0.1
+# 最大迭代次数
+max_iterations : 250
+
+# 图像是否去畸变,会增加约12ms耗时
+img_distort_enable : true
+# 点云降采样大小,单位 m,小于等于0就是不降采样
+leaf_size : 0.02
+
+# 点云dbscan聚类
+cluster :
+  octreeResolution : 1
+  minPtsAux : 20
+  epsilon : 0.2
+  minPts : 10
+  # 欧式聚类
+  cluster_tolerance : 0.08
+  min_cluster_size : 10
+  max_cluster_size : 9999
+
+# obb multiple threads
+obb_omp_threads : 4
+
+# 点云在多大范围投影到相机平面上(数值单位m,坐标系是激光坐标系)
+lidar2camera:
+  min_x : 0.1
+  max_x : 20
+  min_y : -20
+  max_y : 20
+  min_z : -5
+  max_z : 5
+
+
+# 激光雷达到车体坐标系变换
+convert_lidar2car:
+  transform:
+    x: 0.3643
+    y: 0.2078
+    z: 1.21
+  # 角度，代码里会转成弧度
+  rotation :
+    roll: -179.5
+    pitch: 0.5
+    yaw: 360
+
+# 相机到激光雷达坐标系变换
+convert_carmera2lidar:
+  transform:
+    x: -0.01276627371659704
+    y: 1.040611755008172
+    z: 0.2783443893841093
+  # 角度，代码里会转成弧度
+  rotation :
+    yaw: 4.491111184694372
+    pitch: -1.475459526983985
+    roll: 0.2987467915697319
+
+# 相机畸变参数
+camera_distort_params:
+  p0: 0.05828191
+  p1: -0.11750722 
+  p2: -0.014249
+  p3: 0.00087086
+  p4: -0.01850911
+
+# 输入图片尺寸
+image:
+  width: 1280
+  height: 720
+# 相机内参矩阵
+camera_in_param:
+  dx: 787.22316869
+  dy: 793.45182
+  u0: 628.91534144
+  v0: 313.46301416
+
+# 启动时warmup并生成测试
+warmup: false
+# 生成debug图片
+# write_img: false
