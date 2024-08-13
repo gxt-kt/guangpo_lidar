@@ -18,6 +18,8 @@ person_distance : 5
 detect_congest_enable_topic : "/detect_congest_enable"
 # 发布的电梯拥挤度话题
 person_density_topic : "/person_density"
+# 发布的障碍物信息话题
+obstacles_topic_ : "/obstacles"
 
 # 设置传感器时间同步最大时间间隔 单位s
 max_time_interval : 0.2

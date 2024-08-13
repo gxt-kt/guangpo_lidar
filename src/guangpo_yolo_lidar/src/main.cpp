@@ -1,5 +1,6 @@
 #include <cv_bridge/cv_bridge.h>
 #include <filesystem>
+#include <geometry_msgs/PolygonStamped.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/time_synchronizer.h>
@@ -12,13 +13,18 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
+#include <pcl/common/transforms.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+#include <perception_msgs/PerceptionObstacle.h>
+#include <perception_msgs/PerceptionObstacles.h>
+
 #include "dbscan.hpp"
 #include "debugstream.hpp"
+#include "message.hpp"
 #include "yaml_config.h"
 #include "yolo_lidar_help.hpp"
 
@@ -94,6 +100,9 @@ public:
     yolo_dianti.LoadModel(model_dianti_name);
     yolo_other.SetLabels(labels_other);
     yolo_other.LoadModel(model_other_name);
+
+    pub_obstacles_ = nh.advertise<perception_msgs::PerceptionObstacles>(
+        yaml_config["obstacles_topic_"].as<std::string>(), 10);
 
     person_density_pub_ = nh.advertise<std_msgs::Int8>(
         yaml_config["person_density_topic"].as<std::string>(), 10);
@@ -184,11 +193,17 @@ public:
     ROS_INFO("Image published!");
   }
 
+  // 输入的点云是激光坐标系下的,发布的是车辆坐标系
   void SendLidar(ros::Publisher &pub,
                  const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr publish(
+        new pcl::PointCloud<pcl::PointXYZ>);
+    // 将点云进行转换
+    pcl::transformPointCloud(*cloud, *publish, help.convert_lidar2car_affine_);
+
     // 发送点云数组
     sensor_msgs::PointCloud2 msg;
-    pcl::toROSMsg(*cloud, msg);
+    pcl::toROSMsg(*publish, msg);
     msg.header.frame_id = "map"; // 设置坐标系
     msg.header.stamp = ros::Time::now();
     pub.publish(msg);
@@ -265,6 +280,48 @@ public:
       marker.color.g = 0.0f;
       marker.color.b = 0.0f;
       marker.color.a = 0.3;
+
+      marker_array.markers.push_back(marker);
+    }
+
+    pub_3dbox_.publish(marker_array);
+  }
+  void Publish2dObstacles(
+      const std::vector<std::vector<cv::Point2f>> &obstacle_polygons) {
+    visualization_msgs::MarkerArray marker_array;
+
+    // 首先发布一个DELETEALL命令,删除上次发布的所有障碍物标记
+    visualization_msgs::Marker delete_marker;
+    delete_marker.header.frame_id = "map";
+    delete_marker.action = visualization_msgs::Marker::LINE_STRIP;
+    marker_array.markers.push_back(delete_marker);
+    pub_3dbox_.publish(marker_array);
+    marker_array.markers.clear(); // 清空marker_array
+
+    for (size_t i = 0; i < obstacle_polygons.size(); ++i) {
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = "map";
+      marker.type = visualization_msgs::Marker::LINE_STRIP;
+      marker.action = visualization_msgs::Marker::ADD;
+      marker.id = i;
+      marker.scale.x = 0.1;
+      marker.pose.orientation.w = 1.0; // 朝向为单位四元数
+      marker.color.r = 1.0f;
+      marker.color.g = 0.0f;
+      marker.color.b = 0.0f;
+      marker.color.a = 0.3;
+
+      geometry_msgs::Point p;
+      for (const auto &point : obstacle_polygons[i]) {
+        p.x = point.x;
+        p.y = point.y;
+        p.z = 0.0; // 2D 矩形,高度设为0
+        marker.points.push_back(p);
+      }
+      p.x = obstacle_polygons[i][0].x;
+      p.y = obstacle_polygons[i][0].y;
+      p.z = 0.0; // 2D 矩形,高度设为0
+      marker.points.push_back(p);
 
       marker_array.markers.push_back(marker);
     }
@@ -499,33 +556,59 @@ public:
     }
     SendLidar(lidar_pub2_, combined_lidar_points2);
 
-    gDebugWarn() << G_FILE_LINE;
-    // 把点云提取出3dbox
-    static int obb_omp_threads = yaml_config["obb_omp_threads"].as<int>();
-    // omp_set_num_threads(obb_omp_threads);
-    // #pragma omp parallel for
-    for (int i = 0; i < box3ds.size(); i++) {
-      auto &box = box3ds[i];
-      ExtractObstacles(box.lidar_cluster, box.obstacle_centroids,
-                       box.obstacle_sizes, box.obstacle_orientations, true);
-    }
+    // 暂时不需要3dbox
+    // gDebugWarn() << G_FILE_LINE;
+    // // 把点云提取出3dbox
+    // static int obb_omp_threads = yaml_config["obb_omp_threads"].as<int>();
+    // // omp_set_num_threads(obb_omp_threads);
+    // // #pragma omp parallel for
+    // for (int i = 0; i < box3ds.size(); i++) {
+    //   auto &box = box3ds[i];
+    //   ExtractObstacles(box.lidar_cluster, box.obstacle_centroids,
+    //                    box.obstacle_sizes, box.obstacle_orientations, true);
+    // }
+    // gDebugWarn() << G_FILE_LINE;
+    // std::vector<Eigen::Vector3f> obstacle_centroids;
+    // std::vector<Eigen::Vector3f> obstacle_sizes;
+    // std::vector<Eigen::Quaternionf> obstacle_orientations;
+    // for (int i = 0; i < box3ds.size(); i++) {
+    //   auto &box = box3ds[i];
+    //   // 如果聚类失败了(点太少或者不满足要求)
+    //   if (box.lidar_cluster->points.empty()) {
+    //     continue;
+    //   }
+    //   obstacle_centroids.push_back(box.obstacle_centroids);
+    //   obstacle_sizes.push_back(box.obstacle_sizes);
+    //   obstacle_orientations.push_back(box.obstacle_orientations);
+    // }
+    // gDebugWarn() << G_FILE_LINE;
+    // PublishObstacles(obstacle_centroids, obstacle_sizes,
+    // obstacle_orientations);
 
-    gDebugWarn() << G_FILE_LINE;
-    std::vector<Eigen::Vector3f> obstacle_centroids;
-    std::vector<Eigen::Vector3f> obstacle_sizes;
-    std::vector<Eigen::Quaternionf> obstacle_orientations;
+    // 先把点云转到车体坐标系
     for (int i = 0; i < box3ds.size(); i++) {
       auto &box = box3ds[i];
+      pcl::transformPointCloud(*box.lidar_cluster, *box.lidar_cluster,
+                               help.convert_lidar2car_affine_);
       // 如果聚类失败了(点太少或者不满足要求)
       if (box.lidar_cluster->points.empty()) {
         continue;
       }
-      obstacle_centroids.push_back(box.obstacle_centroids);
-      obstacle_sizes.push_back(box.obstacle_sizes);
-      obstacle_orientations.push_back(box.obstacle_orientations);
+      box.position = GetMinAreaRectInfoFrom3DCloud(box.lidar_cluster);
+      // // 输出最小包围矩形的信息
+      // std::cout << "Center: (" << rect.center.x << ", " << rect.center.y <<
+      // ")"
+      //           << std::endl;
+      // std::cout << "Size: (" << rect.size.width << ", " << rect.size.height
+      //           << ")" << std::endl;
+      // std::cout << "Angle: " << rect.angle << " degrees" << std::endl;
     }
-    gDebugWarn() << G_FILE_LINE;
-    PublishObstacles(obstacle_centroids, obstacle_sizes, obstacle_orientations);
+    auto obstacles_msg = PackageMessage(box3ds, true);
+    pub_obstacles_.publish(obstacles_msg);
+
+    // 发布可视化内容
+    auto packages_marker = Package2dBoxMarker(box3ds);
+    Publish2dObstacles(packages_marker);
   }
 
   void Init() {
@@ -597,6 +680,7 @@ private:
   ros::Subscriber sub_detect_congest_enable_;
   bool enable_detect_congest = true;
   ros::Publisher person_density_pub_;
+  ros::Publisher pub_obstacles_;
 
   ros::Publisher image_pub_;
   ros::Publisher lidar_pub1_;

@@ -6,6 +6,7 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/time_synchronizer.h>
 #include <opencv2/core/eigen.hpp>
+#include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
@@ -41,6 +42,12 @@ inline Eigen::Matrix4d TransforMatrix(const Eigen::Vector3d &translation,
   //   std::endl;
   return transformation_matrix;
 }
+
+struct MinAreaRectInfo {
+  cv::Point2f center;
+  std::vector<cv::Point2f> vertices;
+};
+
 struct mybox {
   mybox()
       : lidar_points(new pcl::PointCloud<pcl::PointXYZ>),
@@ -54,10 +61,13 @@ struct mybox {
   Eigen::Vector3f obstacle_centroids;
   Eigen::Vector3f obstacle_sizes;
   Eigen::Quaternionf obstacle_orientations;
+  // 对应到机体坐标系上的点
+  MinAreaRectInfo position;
 
   // 拷贝构造函数
   mybox(const mybox &other)
       : label(other.label), rect(other.rect), small_rect(other.small_rect),
+        position(other.position),
         lidar_points(new pcl::PointCloud<pcl::PointXYZ>(*other.lidar_points)),
         lidar_cluster(new pcl::PointCloud<pcl::PointXYZ>(*other.lidar_cluster)),
         obstacle_centroids(other.obstacle_centroids),
@@ -70,6 +80,8 @@ struct mybox {
       label = other.label;
       rect = other.rect;
       small_rect = other.small_rect;
+
+      position = other.position,
       lidar_points.reset(
           new pcl::PointCloud<pcl::PointXYZ>(*other.lidar_points));
       lidar_cluster.reset(
@@ -84,6 +96,8 @@ struct mybox {
   // 移动构造函数
   mybox(mybox &&other) noexcept
       : label(std::move(other.label)), rect(std::move(other.rect)),
+
+        position(std::move(other.position)),
         small_rect(std::move(other.small_rect)),
         lidar_points(std::move(other.lidar_points)),
         lidar_cluster(std::move(other.lidar_cluster)),
@@ -97,6 +111,7 @@ struct mybox {
       label = std::move(other.label);
       rect = std::move(other.rect);
       small_rect = std::move(other.small_rect);
+      position = std::move(other.position),
       lidar_points = std::move(other.lidar_points);
       lidar_cluster = std::move(other.lidar_cluster);
       obstacle_centroids = std::move(other.obstacle_centroids);
@@ -106,6 +121,27 @@ struct mybox {
     return *this;
   }
 };
+
+// 获取一个3维点云的最小的矩形
+inline MinAreaRectInfo GetMinAreaRectInfoFrom3DCloud(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud) {
+  std::vector<cv::Point2f> points;
+  for (const auto &point : cloud->points) {
+    points.emplace_back(point.x, point.y);
+  }
+  cv::RotatedRect rect = cv::minAreaRect(points);
+
+  MinAreaRectInfo info;
+  info.center = rect.center;
+
+  cv::Point2f vertices[4];
+  rect.points(vertices);
+  for (int i = 0; i < 4; i++) {
+    info.vertices.push_back(vertices[i]);
+  }
+
+  return info;
+}
 
 // 把点云去除地面相关点
 // 返回值第一个是非地面点,第二个是地面点
@@ -303,8 +339,11 @@ public:
     convert_camera2lidar_ = Camera2Lidar();
     gDebugCol5(convert_camera2lidar_);
     // 初始化雷达到车体位姿
-    convert_lidar2car_ = Lidar2Car();
-    gDebugCol5(convert_lidar2car_);
+    auto get = Lidar2Car();
+    convert_lidar2car_matrix_ = get.first;
+    convert_lidar2car_affine_ = get.second;
+    gDebugCol5(convert_lidar2car_matrix_);
+    gDebugCol5(convert_lidar2car_affine_);
 
     {
       Eigen::Affine3d convert_point_cl = Eigen::Affine3d(
@@ -316,10 +355,11 @@ public:
       all_in_one_matrix_ = camera_inner_eigen * xyz2zyx * convert_point_cl;
     }
   }
-  cv::Mat camera_inner_matrix_;          // 相机内参矩阵
-  cv::Mat camera_distort_matrix_;        // 相机畸变参数矩阵
-  Eigen::Matrix4d convert_camera2lidar_; // 相机到雷达的位姿转换
-  Eigen::Matrix4d convert_lidar2car_;    // 雷达到车的位姿转换
+  cv::Mat camera_inner_matrix_;              // 相机内参矩阵
+  cv::Mat camera_distort_matrix_;            // 相机畸变参数矩阵
+  Eigen::Matrix4d convert_camera2lidar_;     // 相机到雷达的位姿转换
+  Eigen::Matrix4d convert_lidar2car_matrix_; // 雷达到车的位姿转换
+  Eigen::Affine3f convert_lidar2car_affine_; // 雷达到车的位姿转换
 
   Eigen::Affine3d all_in_one_matrix_; // 激光点到相机像素坐标系点
 public:
@@ -380,7 +420,7 @@ private:
     //   转换为Affine3f类型 affine3f_transform = affine3f_transform.inverse();
     return tran_matrix;
   }
-  inline Eigen::Matrix4d Lidar2Car() {
+  inline std::pair<Eigen::Matrix4d, Eigen::Affine3f> Lidar2Car() {
     // 初始化坐标系变换的旋转矩阵
     Eigen::Vector3d trans;
     trans[0] = yaml_config["convert_lidar2car"]["transform"]["x"].as<double>();
@@ -402,9 +442,10 @@ private:
     Eigen::Matrix4d tran_matrix = TransforMatrix(
         trans, roll * M_PI / 180.0, pitch * M_PI / 180.0, yaw * M_PI / 180.0);
     gDebug() << VAR(tran_matrix);
-    //   Eigen::Affine3d affine3d_transform(tran_matrix); // 转换为Affine3d类型
-    //   affine3f_transform = affine3d_transform.cast<float>(); //
-    //   转换为Affine3f类型 affine3f_transform = affine3f_transform.inverse();
-    return tran_matrix;
+    Eigen::Affine3d affine3d_transform(tran_matrix); // 转换为Affine3d类型
+    Eigen::Affine3f affine3f_transform = affine3d_transform.cast<float>(); //
+    // 转换为Affine3f类型
+    affine3f_transform = affine3f_transform.inverse();
+    return {tran_matrix, affine3f_transform};
   }
 };
