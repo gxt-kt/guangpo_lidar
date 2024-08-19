@@ -335,9 +335,7 @@ public:
          yaml_config["camera_distort_params"]["p4"].as<double>());
     gDebugCol5(camera_distort_matrix_);
 
-    // 初始化相机到雷达位姿
-    convert_camera2lidar_ = Camera2Lidar();
-    gDebugCol5(convert_camera2lidar_);
+
     // 初始化雷达到车体位姿
     auto get = Lidar2Car();
     convert_lidar2car_matrix_ = get.first;
@@ -345,11 +343,30 @@ public:
     gDebugCol5(convert_lidar2car_matrix_);
     gDebugCol5(convert_lidar2car_affine_);
 
-    {
+    Eigen::Matrix3d camera_inner_eigen;
+    cv::cv2eigen(camera_inner_matrix_, camera_inner_eigen);
+    if(yaml_config["if_use_matrix"].as<bool>()) {
+      Eigen::Matrix4d tmp;
+      std::vector<float> ext= yaml_config["convert_carmera2lidar_matrix"].as<std::vector<float>>();
+      gDebug(ext);
+      assert(ext.size()==16);
+      for (int row = 0; row < 4; row++) {
+        for (int col = 0; col < 4; col++) {
+          tmp(row, col) = ext.at(col + row * 4);
+        }
+      }
+      gDebug(tmp);
+      // std::terminate();
+      // Eigen::Affine3d tmp2 = Eigen::Affine3d(tmp.inverse());
+      Eigen::Affine3d tmp2 = Eigen::Affine3d(tmp);
+      all_in_one_matrix_ = camera_inner_eigen * tmp2;
+    } else {
+      // 初始化相机到雷达位姿
+      Eigen::Matrix4d convert_camera2lidar_ = Camera2Lidar();
+      gDebugCol5(convert_camera2lidar_);
+
       Eigen::Affine3d convert_point_cl = Eigen::Affine3d(
           convert_camera2lidar_.inverse()); // 转换为Affine3d类型
-      Eigen::Matrix3d camera_inner_eigen;
-      cv::cv2eigen(camera_inner_matrix_, camera_inner_eigen);
       Eigen::Matrix3d xyz2zyx;
       xyz2zyx << 0, -1, 0, 0, 0, 1, 1, 0, 0;
       all_in_one_matrix_ = camera_inner_eigen * xyz2zyx * convert_point_cl;
@@ -357,7 +374,6 @@ public:
   }
   cv::Mat camera_inner_matrix_;              // 相机内参矩阵
   cv::Mat camera_distort_matrix_;            // 相机畸变参数矩阵
-  Eigen::Matrix4d convert_camera2lidar_;     // 相机到雷达的位姿转换
   Eigen::Matrix4d convert_lidar2car_matrix_; // 雷达到车的位姿转换
   Eigen::Affine3f convert_lidar2car_affine_; // 雷达到车的位姿转换
 

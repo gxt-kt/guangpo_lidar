@@ -310,6 +310,7 @@ public:
       marker.color.g = 0.0f;
       marker.color.b = 0.0f;
       marker.color.a = 0.3;
+      marker.lifetime = ros::Duration(1);
 
       geometry_msgs::Point p;
       for (const auto &point : obstacle_polygons[i]) {
@@ -414,9 +415,9 @@ public:
     detect_result_group = yolo_other.Infer(image, "");
     TIME_END(infer);
 
-    TIME_BEGIN(send_image);
-    SendImage(image);
-    TIME_END(send_image);
+    // TIME_BEGIN(send_image);
+    // SendImage(image);
+    // TIME_END(send_image);
 
     // 开启电梯拥挤度检测
     if (enable_detect_congest) {
@@ -441,14 +442,14 @@ public:
       // gDebug() << VAR(max_iterations, remove_ground_height);
       auto [noground, ground] = RansacSegmentPlane<pcl::PointXYZ>(
           cloud, max_iterations, remove_ground_height);
-      SendLidar(pub_cloud_noground_, noground);
       // 把cloud赋值成noground,后面全部基于非地面点云做
       *cloud = *noground;
     }
+    SendLidar(pub_cloud_noground_, cloud);
 
-    gDebugWarn() << G_FILE_LINE;
+    // gDebugWarn() << G_FILE_LINE;
     std::vector<mybox> box3ds;
-    gDebugWarn() << G_FILE_LINE;
+    // gDebugWarn() << G_FILE_LINE;
     for (int i = 0; i < detect_result_group.count; i++) {
       const detect_result_t *det_result = &(detect_result_group.results[i]);
       // box.x = (double)(det_result->box.left + det_result->box.right) / 2.0 /
@@ -478,7 +479,7 @@ public:
         box3ds.push_back(box);
       }
     }
-    gDebugWarn() << G_FILE_LINE;
+    // gDebugWarn() << G_FILE_LINE;
     Eigen::Vector3d X;
     for (pcl::PointCloud<pcl::PointXYZ>::const_iterator it =
              cloud->points.begin();
@@ -493,8 +494,9 @@ public:
       static double max_y = yaml_config["lidar2camera"]["max_y"].as<double>();
       static double min_z = yaml_config["lidar2camera"]["min_z"].as<double>();
       static double max_z = yaml_config["lidar2camera"]["max_z"].as<double>();
-      if (it->x < min_x || it->x > max_x || it->x < min_y || it->x > max_y ||
-          it->x < min_z || it->x > max_z) {
+      // if(it->y < 0.05) continue;
+      if (it->x < min_x || it->x > max_x || it->y < min_y || it->y > max_y ||
+          it->z < min_z || it->z > max_z) {
         continue;
       }
 
@@ -508,6 +510,7 @@ public:
       cv::Point pt;
       pt.x = Y[0] / Y[2];
       pt.y = Y[1] / Y[2];
+      // if (Y[] < 0) continue;
 
       int only_one_box_contain = 0;
       int box_id = 0;
@@ -523,6 +526,7 @@ public:
       if (only_one_box_contain == 1) {
         box3ds.at(box_id).lidar_points->push_back(*it);
       }
+
       // float val = it->x;
       // float maxVal = 3;
       // if (val < maxVal) {
@@ -530,13 +534,16 @@ public:
       // } else {
       //   cv::circle(image, pt, 1, cv::Scalar(0, 0, 255), -1);
       // }
+      cv::circle(image, pt, 1, cv::Scalar(0, 255, 0), -1);
       // int red = std::min(255, (int)(255 * abs((val - maxVal) / maxVal)));
       // int green =
       //     std::min(255, (int)(255 * (1 - abs((val - maxVal) / maxVal))));
       // cv::circle(image, pt, 1, cv::Scalar(0, green, red), -1);
+      // cv::circle(image, pt, 1, cv::Scalar(0, green, red), -1);
     }
+        SendImage(image);
 
-    gDebugWarn() << G_FILE_LINE;
+    // gDebugWarn() << G_FILE_LINE;
     pcl::PointCloud<pcl::PointXYZ>::Ptr combined_lidar_points(
         new pcl::PointCloud<pcl::PointXYZ>);
     for (int i = 0; i < box3ds.size(); i++) {
@@ -545,7 +552,7 @@ public:
     }
     SendLidar(lidar_pub1_, combined_lidar_points);
 
-    gDebugWarn() << G_FILE_LINE;
+    // gDebugWarn() << G_FILE_LINE;
     pcl::PointCloud<pcl::PointXYZ>::Ptr combined_lidar_points2(
         new pcl::PointCloud<pcl::PointXYZ>);
     // 点云聚类
