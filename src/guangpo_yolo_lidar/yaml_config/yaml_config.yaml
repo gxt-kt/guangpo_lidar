@@ -2,9 +2,10 @@
 sub_image_topic : "/usb_cam/image_raw"
 sub_pointcloud_topic : "/livox/lidar_192_168_20_105"
 pub_image_topic : "detect_img"
+pub_image_raw_topic : "image_raw"
 pub_lidar_topic : "detect_lidar"
 pub_cloud_noground_topic : "cloud_noground"
-pub_box3d_markers_topic : "box3d_markers"
+pub_box3d_markers_topic : "/box3d_markers"
 
 # 使用仿真还是激光雷达
 # 使用仿真就是图像数据从功能包接收
@@ -34,14 +35,14 @@ max_iterations : 400
 # 图像是否去畸变,会增加约12ms耗时
 img_distort_enable : true
 # 点云降采样大小,单位 m,小于等于0就是不降采样
-leaf_size : 0.05
+leaf_size : 0.02
 
 # 点云dbscan聚类
 cluster :
   octreeResolution : 1
   minPtsAux : 20
-  epsilon : 0.03
-  minPts : 10
+  epsilon : 0.08
+  minPts : 5
   # 欧式聚类
   cluster_tolerance : 0.08
   min_cluster_size : 10
@@ -75,7 +76,13 @@ convert_lidar2car:
 # 相机到激光雷达坐标系是使用matrix还是用欧拉角
 if_use_matrix : true
 # 相机到激光雷达坐标系变换
-convert_carmera2lidar_matrix: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+convert_carmera2lidar_matrix: [ 9.8926083033897869e-02, 9.9507023727951061e-01,
+       6.9894904012135772e-03, -4.2821240081363088e-01,
+       -2.5562146328092408e-02, -4.4804609003203655e-03,
+       9.9966319435358919e-01, 6.4979552549797051e-02,
+       9.9476640814347539e-01, -9.9071430546949363e-02,
+       2.4992896565013255e-02, 1.2746014762805993e-01, 0., 0., 0., 1. ]
+
 
 # 相机到激光雷达坐标系变换
 # convert_carmera2lidar:

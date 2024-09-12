@@ -126,6 +126,9 @@ public:
         pub_box3d_markers_topic, 10);
     std::string send_image_topic =
         yaml_config["pub_image_topic"].as<std::string>();
+    std::string send_image_raw_topic =
+        yaml_config["pub_image_raw_topic"].as<std::string>();
+    image_raw_pub_ = nh.advertise<sensor_msgs::Image>(send_image_raw_topic, 1);
     image_pub_ = nh.advertise<sensor_msgs::Image>(send_image_topic, 1);
     std::string send_lidar_topic =
         yaml_config["pub_lidar_topic"].as<std::string>();
@@ -191,6 +194,16 @@ public:
     // 发布图像消息
     image_pub_.publish(msg);
     ROS_INFO("Image published!");
+  }
+  void SendImageRaw(const cv::Mat &image) {
+    // 将cv::Mat图像转换为sensor_msgs::Image消息
+    sensor_msgs::ImagePtr msg =
+        cv_bridge::CvImage(std_msgs::Header(), "bgr8", image).toImageMsg();
+    msg->header.stamp = ros::Time::now();
+
+    // 发布图像消息
+    image_raw_pub_.publish(msg);
+    ROS_INFO("Image Raw published!");
   }
 
   // 输入的点云是激光坐标系下的,发布的是车辆坐标系
@@ -291,12 +304,12 @@ public:
     visualization_msgs::MarkerArray marker_array;
 
     // 首先发布一个DELETEALL命令,删除上次发布的所有障碍物标记
-    visualization_msgs::Marker delete_marker;
-    delete_marker.header.frame_id = "map";
-    delete_marker.action = visualization_msgs::Marker::LINE_STRIP;
-    marker_array.markers.push_back(delete_marker);
-    pub_3dbox_.publish(marker_array);
-    marker_array.markers.clear(); // 清空marker_array
+    // visualization_msgs::Marker delete_marker;
+    // delete_marker.header.frame_id = "map";
+    // delete_marker.action = visualization_msgs::Marker::LINE_STRIP;
+    // marker_array.markers.push_back(delete_marker);
+    // pub_3dbox_.publish(marker_array);
+    // marker_array.markers.clear(); // 清空marker_array
 
     for (size_t i = 0; i < obstacle_polygons.size(); ++i) {
       visualization_msgs::Marker marker;
@@ -318,6 +331,7 @@ public:
         p.y = point.y;
         p.z = 0.0; // 2D 矩形,高度设为0
         marker.points.push_back(p);
+        gDebugWarn() << VAR(p.x,p.y);
       }
       p.x = obstacle_polygons[i][0].x;
       p.y = obstacle_polygons[i][0].y;
@@ -399,6 +413,8 @@ public:
     if (img_distort_enable) {
       help.UndistortImage(image);
     }
+    // send image raw
+    SendImageRaw(image);
     // 对点云进行降采样
     if (leaf_size > 0) {
       // 创建 VoxelGrid 滤波器
@@ -690,6 +706,7 @@ private:
   ros::Publisher pub_obstacles_;
 
   ros::Publisher image_pub_;
+  ros::Publisher image_raw_pub_;
   ros::Publisher lidar_pub1_;
   ros::Publisher lidar_pub2_;
   ros::Publisher pub_cloud_noground_;
