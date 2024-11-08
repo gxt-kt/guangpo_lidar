@@ -106,6 +106,8 @@ public:
 
     person_density_pub_ = nh.advertise<std_msgs::Int8>(
         yaml_config["person_density_topic"].as<std::string>(), 10);
+    person_density_withroi_pub_ = nh.advertise<std_msgs::Int8>(
+        yaml_config["person_density_withroi_topic"].as<std::string>(), 10);
 
     sub_detect_congest_enable_ = nh.subscribe(
         yaml_config["detect_congest_enable_topic"].as<std::string>(), 10,
@@ -492,6 +494,7 @@ public:
           class_name == "car" || class_name == "motorcycle" ||
           class_name == "cat" || class_name == "dog") {
         box.label = class_name;
+        box.prop = det_result->prop;
         box3ds.push_back(box);
       }
     }
@@ -629,6 +632,46 @@ public:
     auto obstacles_msg = PackageMessage(box3ds, true);
     pub_obstacles_.publish(obstacles_msg);
 
+    // 添加电梯拥挤度使用roi检测的代码
+    static double person_density_roi_x_min = yaml_config["person_density_roi"]["x_min"].as<double>();
+    static double person_density_roi_x_max = yaml_config["person_density_roi"]["x_max"].as<double>();
+    static double person_density_roi_y_min = yaml_config["person_density_roi"]["y_min"].as<double>();
+    static double person_density_roi_y_max = yaml_config["person_density_roi"]["y_max"].as<double>();
+    static double person_density_roi_confidence = yaml_config["person_density_roi_confidence"].as<double>();
+    // gDebugWarn(person_density_roi_x_min);
+    // gDebugWarn(person_density_roi_x_max);
+    // gDebugWarn(person_density_roi_y_min);
+    // gDebugWarn(person_density_roi_y_max);
+    int person_withroi_cnt=0;
+    for (int i = 0; i < box3ds.size(); i++) {
+      auto &box = box3ds[i];
+      if(box.label != "person") {
+        continue;
+      }
+      // 如果聚类失败了(点太少或者不满足要求)
+      if (box.lidar_cluster->points.empty()) {
+        continue;
+      }
+
+      auto& center= box.position.center;
+      gDebugWarn() << VAR(i,box.prop,center.x,center.y);
+      if(box.prop < person_density_roi_confidence) {
+        continue;
+      }
+      if(center.x < person_density_roi_x_min || center.x > person_density_roi_x_max) {
+        continue;
+      }
+      if(center.y < person_density_roi_y_min || center.y > person_density_roi_y_max) {
+        continue;
+      }
+      person_withroi_cnt++;
+    }
+    gDebugWarn(person_withroi_cnt);
+    std_msgs::Int8 person_density_roi_msg;
+    person_density_roi_msg.data = person_withroi_cnt;
+    person_density_withroi_pub_.publish(person_density_roi_msg);
+
+
     // 发布可视化内容
     auto packages_marker = Package2dBoxMarker(box3ds);
     Publish2dObstacles(packages_marker);
@@ -703,6 +746,7 @@ private:
   ros::Subscriber sub_detect_congest_enable_;
   bool enable_detect_congest = true;
   ros::Publisher person_density_pub_;
+  ros::Publisher person_density_withroi_pub_;
   ros::Publisher pub_obstacles_;
 
   ros::Publisher image_pub_;

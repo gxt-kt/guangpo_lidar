@@ -54,6 +54,7 @@ struct mybox {
         lidar_cluster(new pcl::PointCloud<pcl::PointXYZ>) {}
 
   std::string label;
+  float prop;
   cv::Rect rect;
   cv::Rect small_rect;
   pcl::PointCloud<pcl::PointXYZ>::Ptr lidar_points;
@@ -66,7 +67,7 @@ struct mybox {
 
   // 拷贝构造函数
   mybox(const mybox &other)
-      : label(other.label), rect(other.rect), small_rect(other.small_rect),
+      : label(other.label), prop(other.prop), rect(other.rect), small_rect(other.small_rect),
         position(other.position),
         lidar_points(new pcl::PointCloud<pcl::PointXYZ>(*other.lidar_points)),
         lidar_cluster(new pcl::PointCloud<pcl::PointXYZ>(*other.lidar_cluster)),
@@ -78,6 +79,7 @@ struct mybox {
   mybox &operator=(const mybox &other) {
     if (this != &other) {
       label = other.label;
+      prop = other.prop;
       rect = other.rect;
       small_rect = other.small_rect;
 
@@ -95,7 +97,7 @@ struct mybox {
 
   // 移动构造函数
   mybox(mybox &&other) noexcept
-      : label(std::move(other.label)), rect(std::move(other.rect)),
+      : label(std::move(other.label)),prop(std::move(other.prop)), rect(std::move(other.rect)),
 
         position(std::move(other.position)),
         small_rect(std::move(other.small_rect)),
@@ -109,6 +111,7 @@ struct mybox {
   mybox &operator=(mybox &&other) noexcept {
     if (this != &other) {
       label = std::move(other.label);
+      prop = std::move(other.prop);
       rect = std::move(other.rect);
       small_rect = std::move(other.small_rect);
       position = std::move(other.position),
