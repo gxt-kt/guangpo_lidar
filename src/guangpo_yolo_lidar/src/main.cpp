@@ -108,6 +108,8 @@ public:
         yaml_config["person_density_topic"].as<std::string>(), 10);
     person_density_withroi_pub_ = nh.advertise<std_msgs::Int8>(
         yaml_config["person_density_withroi_topic"].as<std::string>(), 10);
+    person_density_fusion_pub_ = nh.advertise<std_msgs::Int8>(
+        yaml_config["person_density_fusion_topic"].as<std::string>(), 10);
 
     sub_detect_congest_enable_ = nh.subscribe(
         yaml_config["detect_congest_enable_topic"].as<std::string>(), 10,
@@ -438,8 +440,9 @@ public:
     // TIME_END(send_image);
 
     // 开启电梯拥挤度检测
+    int person_density;
     if (enable_detect_congest) {
-      int person_density = GetPersonNumber(detect_result_group);
+      person_density = GetPersonNumber(detect_result_group);
       gDebugCol4(person_density);
       // 发布person_density话题
       std_msgs::Int8 density_msg;
@@ -671,6 +674,29 @@ public:
     person_density_roi_msg.data = person_withroi_cnt;
     person_density_withroi_pub_.publish(person_density_roi_msg);
 
+    // 发布融合后的话题
+    size_t person_fusion_cnt=[](size_t person_1,size_t person_2){
+      // yolo识别到一个肯定就有且仅有一个
+      if (person_1 <= 1) {
+        return person_1;
+      }
+      // yolo识别到两个，适用于无明显遮挡并且潜在有镜像虚象
+      // 人数少，点云识别也比较准确，以点云为主
+      if (person_1 == 2 || person_1 == 3) {
+        return person_2;
+      }
+      // 这个就比较复杂，很容易出现镜像出现人或者点云遮挡情况
+      // 可能真有四个人但是点云遮挡只识别到两个
+      // 也可能有三个人点云也识别到了三个
+      // if (person_1 == 4) {
+        return (person_1 + person_2) / 2;
+      // }
+      // 云谷场景下，yolo识别到人数很多，基本露不出镜像了
+      // return person_1;
+    }(person_density,person_withroi_cnt);
+    std_msgs::Int8 person_density_fusion_msg;
+    person_density_fusion_msg.data = person_fusion_cnt;
+    person_density_fusion_pub_.publish(person_density_fusion_msg);
 
     // 发布可视化内容
     auto packages_marker = Package2dBoxMarker(box3ds);
@@ -747,6 +773,7 @@ private:
   bool enable_detect_congest = true;
   ros::Publisher person_density_pub_;
   ros::Publisher person_density_withroi_pub_;
+  ros::Publisher person_density_fusion_pub_;
   ros::Publisher pub_obstacles_;
 
   ros::Publisher image_pub_;

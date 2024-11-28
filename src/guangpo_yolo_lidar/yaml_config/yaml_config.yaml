@@ -21,19 +21,21 @@ detect_congest_enable_topic : "/detect_congest_enable"
 person_density_topic : "/person_density"
 # 发布的电梯拥挤度话题（指定roi排除掉镜像人员)
 person_density_withroi_topic : "/person_density_withroi"
+# 发布的电梯拥挤度话题（ 融合yolo和点云的数据 )
+person_density_fusion_topic : "/person_density_fusion"
 # 电梯拥挤度roi筛选（大于这个置信度才进行后续的roi筛选） (设置成1.0就认为不筛选置信度了)
 person_density_roi_confidence : 0.6
 # 电梯拥挤度检测，排除掉镜像人员，指定roi区域 （长方形区域，基于车体坐标系）
 person_density_roi:
   x_min: 0 
-  x_max: 2.8 
-  y_min: -0.5
-  y_max: 0.5
+  x_max: 1.95
+  y_min: -0.7
+  y_max: 0.7
 # 发布的障碍物信息话题
 obstacles_topic_ : "/obstacles"
 
 # 设置传感器时间同步最大时间间隔 单位s
-max_time_interval : 0.2
+max_time_interval : 0.1
 
 # 点云是否去除地面(去除地面最好开启点云降采样)
 remove_ground_points_enable : true
